@@ -33,9 +33,10 @@ async def atender_cliente(websocket):
                 return
             if not mensagem.strip():
                 continue
-            # Inclui o remetente. broadcast ignora conexões fechadas e falhas
-            # individuais de envio, sem bloquear a entrega aos demais clientes.
-            broadcast(clientes.copy(), f"[{nickname}]: {mensagem}")
+            # Retransmite para todos os demais clientes conectados (exceto o remetente).
+            # broadcast ignora conexões fechadas e falhas individuais de envio.
+            destinatarios = [c for c in clientes if c is not websocket]
+            broadcast(destinatarios, f"[{nickname}]: {mensagem}")
     except ConnectionClosed:
         # Uma queda de conexão encerra somente o atendimento deste cliente.
         print(f"Conexão encerrada: {websocket.remote_address}", flush=True)

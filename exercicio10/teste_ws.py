@@ -50,7 +50,15 @@ class TesteChatWebSocket(unittest.TestCase):
     @staticmethod
     def parar_processo(processo):
         if processo.poll() is None:
-            processo.terminate()
+            if os.name == "nt":
+                # O launcher do Python em um venv pode criar um processo filho.
+                # Encerra a árvore inteira para liberar os logs no Windows.
+                subprocess.run(
+                    ["taskkill", "/PID", str(processo.pid), "/T", "/F"],
+                    capture_output=True, check=True, timeout=5,
+                )
+            else:
+                processo.terminate()
             processo.wait(timeout=5)
 
     def ler_log(self):
@@ -75,15 +83,20 @@ class TesteChatWebSocket(unittest.TestCase):
         self.assertIsNone(self.servidor.poll(), self.ler_log())
         self.assertNotIn("Traceback", self.ler_log())
 
-    def test_broadcast_para_todos_incluindo_remetente(self):
+    def test_broadcast_para_demais_clientes(self):
         clientes = [self.conectar(nome) for nome in ("Ana", "Beto", "Caio")]
         clientes[0].send("Olá, ação!\nSegunda linha")
-        for ws in clientes:
+        # Beto e Caio recebem a mensagem; Ana (remetente) não recebe
+        for ws in (clientes[1], clientes[2]):
             self.assertEqual(ws.recv(timeout=3), "[Ana]: Olá, ação!\nSegunda linha")
+        with self.assertRaises(TimeoutError):
+            clientes[0].recv(timeout=0.2)
         # A mesma conexão continua ativa para mensagens em ambos os sentidos.
         clientes[1].send("Resposta")
-        for ws in clientes:
+        for ws in (clientes[0], clientes[2]):
             self.assertEqual(ws.recv(timeout=3), "[Beto]: Resposta")
+        with self.assertRaises(TimeoutError):
+            clientes[1].recv(timeout=0.2)
         self.verificar_servidor()
 
     def test_envios_simultaneos(self):
@@ -96,10 +109,14 @@ class TesteChatWebSocket(unittest.TestCase):
 
         with ThreadPoolExecutor(max_workers=3) as executor:
             list(executor.map(enviar, clientes))
-        esperadas = {f"[{nome}]: Mensagem {numero}" for nome in nomes for numero in range(10)}
-        for ws in clientes:
-            recebidas = [ws.recv(timeout=3) for _ in range(30)]
-            self.assertEqual(len(recebidas), 30)
+        for ws, remetente in zip(clientes, nomes):
+            esperadas = {
+                f"[{outro}]: Mensagem {numero}"
+                for outro in nomes if outro != remetente
+                for numero in range(10)
+            }
+            recebidas = [ws.recv(timeout=3) for _ in range(20)]
+            self.assertEqual(len(recebidas), 20)
             self.assertEqual(set(recebidas), esperadas)
         self.verificar_servidor()
 
@@ -110,24 +127,27 @@ class TesteChatWebSocket(unittest.TestCase):
             ana.send(mensagem)
         # Uma mensagem posterior marca que as anteriores já foram processadas.
         ana.send("Válida")
-        for ws in (ana, beto):
-            self.assertEqual(ws.recv(timeout=3), "[Ana]: Válida")
-            with self.assertRaises(TimeoutError):
-                ws.recv(timeout=0.1)
+        self.assertEqual(beto.recv(timeout=3), "[Ana]: Válida")
+        with self.assertRaises(TimeoutError):
+            ana.recv(timeout=0.1)
+        with self.assertRaises(TimeoutError):
+            beto.recv(timeout=0.1)
 
     def test_nickname_vazio_fecha_apenas_conexao_invalida(self):
         ana = self.conectar("Ana")
+        beto = self.conectar("Beto")
         with connect(self.uri, proxy=None, open_timeout=3, close_timeout=1) as invalido:
             invalido.send("   ")
             with self.assertRaises(ConnectionClosed):
                 invalido.recv(timeout=3)
             self.assertEqual(invalido.close_code, 1008)
         ana.send("Continuo conectada")
-        self.assertEqual(ana.recv(timeout=3), "[Ana]: Continuo conectada")
+        self.assertEqual(beto.recv(timeout=3), "[Ana]: Continuo conectada")
         self.verificar_servidor()
 
     def test_dados_binarios_nao_derrubam_servidor(self):
         ana = self.conectar("Ana")
+        beto = self.conectar("Beto")
         for identificar in (False, True):
             with self.subTest(nickname_enviado=identificar):
                 with connect(self.uri, proxy=None, open_timeout=3, close_timeout=1) as invalido:
@@ -138,16 +158,17 @@ class TesteChatWebSocket(unittest.TestCase):
                         invalido.recv(timeout=3)
                     self.assertEqual(invalido.close_code, 1003)
         ana.send("Servidor ativo")
-        self.assertEqual(ana.recv(timeout=3), "[Ana]: Servidor ativo")
+        self.assertEqual(beto.recv(timeout=3), "[Ana]: Servidor ativo")
         self.verificar_servidor()
 
     def test_saida_normal_preserva_demais_clientes(self):
         ana = self.conectar("Ana")
         beto = self.conectar("Beto")
+        caio = self.conectar("Caio")
         beto.close()
         self.esperar(lambda: "Beto desconectado." in self.ler_log())
         ana.send("Depois da saída")
-        self.assertEqual(ana.recv(timeout=3), "[Ana]: Depois da saída")
+        self.assertEqual(caio.recv(timeout=3), "[Ana]: Depois da saída")
         self.verificar_servidor()
 
     def test_queda_abrupta_preserva_chat_e_novas_conexoes(self):
@@ -159,8 +180,9 @@ class TesteChatWebSocket(unittest.TestCase):
         self.esperar(lambda: "Beto desconectado." in self.ler_log())
         caio = self.conectar("Caio")
         ana.send("Depois da queda")
-        for ws in (ana, caio):
-            self.assertEqual(ws.recv(timeout=3), "[Ana]: Depois da queda")
+        self.assertEqual(caio.recv(timeout=3), "[Ana]: Depois da queda")
+        with self.assertRaises(TimeoutError):
+            ana.recv(timeout=0.2)
         self.verificar_servidor()
 
     def test_cliente_terminal_envia_recebe_e_sai(self):
@@ -177,12 +199,10 @@ class TesteChatWebSocket(unittest.TestCase):
                 cliente.stdin.flush()
                 self.esperar(lambda: "Duda conectado:" in self.ler_log())
                 ana.send("Recebida enquanto aguarda teclado")
-                self.assertEqual(ana.recv(timeout=3), "[Ana]: Recebida enquanto aguarda teclado")
                 self.esperar(lambda: "[Ana]: Recebida enquanto aguarda teclado" in log_cliente.read_text(encoding="utf-8"))
                 cliente.stdin.write("   \nOlá da Duda\n".encode("utf-8"))
                 cliente.stdin.flush()
                 self.assertEqual(ana.recv(timeout=3), "[Duda]: Olá da Duda")
-                self.esperar(lambda: "[Duda]: Olá da Duda" in log_cliente.read_text(encoding="utf-8"))
                 cliente.stdin.write(b"sair\n")
                 cliente.stdin.flush()
                 cliente.wait(timeout=5)
@@ -195,8 +215,9 @@ class TesteChatWebSocket(unittest.TestCase):
         self.assertIn("Digite uma mensagem não vazia.", texto)
         self.assertNotIn("Traceback", texto)
         self.esperar(lambda: "Duda desconectado." in self.ler_log())
+        beto = self.conectar("Beto")
         ana.send("Ainda conectado")
-        self.assertEqual(ana.recv(timeout=3), "[Ana]: Ainda conectado")
+        self.assertEqual(beto.recv(timeout=3), "[Ana]: Ainda conectado")
         self.verificar_servidor()
 
     def test_cliente_trata_conexao_recusada(self):

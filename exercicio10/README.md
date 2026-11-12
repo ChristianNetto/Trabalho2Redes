@@ -33,7 +33,7 @@ Para conversar entre máquinas, informe no cliente o IP da máquina do servidor 
 ## Funcionamento
 
 O cliente solicita um nickname não vazio. A primeira mensagem WebSocket enviada contém esse nickname; as seguintes são as mensagens do chat.
-O servidor mantém as conexões ativas e faz broadcast no formato `[Nome]: mensagem` para **todos** os participantes identificados, incluindo quem enviou.
+O servidor mantém as conexões ativas e faz broadcast no formato `[Nome]: mensagem` para todos os demais participantes conectados (exceto o remetente).
 O cliente recebe mensagens em uma thread separada enquanto aguarda o teclado, permitindo comunicação em tempo real nos dois sentidos.
 
 Mensagens vazias ou só com espaços são ignoradas. O protocolo aceita mensagens de texto; um nickname vazio ou o envio de dados binários encerra apenas a conexão inválida.
@@ -48,7 +48,7 @@ Depois de instalar a dependência:
 python3 -m unittest discover -s exercicio10 -p "teste_*.py" -v
 ```
 
-Os testes iniciam o servidor local em uma porta livre e usam conexões WebSocket reais para verificar broadcast incluindo o remetente, identificação por nickname, mensagens simultâneas, rejeição de entradas inválidas, desconexões normais e abruptas, conexão recusada e envio/recepção pelo cliente de terminal.
+Os testes iniciam o servidor local em uma porta livre e usam conexões WebSocket reais para verificar broadcast para os demais clientes, identificação por nickname, mensagens simultâneas, rejeição de entradas inválidas, desconexões normais e abruptas, conexão recusada e envio/recepção pelo cliente de terminal.
 Usam `unittest` da biblioteca padrão, sem dependências adicionais.
 
 APIs utilizadas: [servidor e broadcast](https://websockets.readthedocs.io/en/16.1.1/reference/asyncio/server.html) e [cliente com threads](https://websockets.readthedocs.io/en/16.1.1/reference/sync/client.html).
