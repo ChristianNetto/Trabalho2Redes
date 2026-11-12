@@ -7,9 +7,9 @@ Integrantes:
 - Christian Netto Moura
 - Marcio Antonio Ribeiro Junior
 
-Implementação dos exercícios **1 a 4** de comunicação cliente-servidor com sockets TCP e UDP.
+Implementação dos exercícios **1 a 4 e 10** de comunicação cliente-servidor com sockets TCP, UDP e WebSockets.
 Requer Python **3.10 ou superior**, em Linux ou ambiente compatível.
-Todos os programas utilizam exclusivamente a biblioteca padrão; não há dependências para instalar com pip.
+Os exercícios 1 a 4 utilizam exclusivamente a biblioteca padrão. O exercício 10 utiliza `websockets`; a instalação está descrita no README da pasta.
 
 | Exercício | Conteúdo | Instruções |
 | --- | --- | --- |
@@ -17,6 +17,7 @@ Todos os programas utilizam exclusivamente a biblioteca padrão; não há depend
 | 2 | Echo UDP com limite de payload e timeout | [README](exercicio2/README.md) |
 | 3 | Chat TCP com nickname, broadcast e threads | [README](exercicio3/README.md) |
 | 4 | Hora via TCP, threads e contador protegido por Lock | [README](exercicio4/README.md) |
+| 10 | Chat WebSocket com nickname e broadcast | [README](exercicio10/README.md) |
 
 Execute os comandos dos READMEs a partir da raiz deste repositório, iniciando o servidor antes dos clientes, em terminais separados.
 Para executar em outra máquina, informe ao cliente o IP da máquina do servidor em `--host` e utilize a mesma `--porta` nos dois programas.
